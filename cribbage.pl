@@ -66,12 +66,34 @@ sort_hand(Hand, SortedHand) :-
 
 score_hand(SortedHand, Hand, Startcard, Value) :-
     score_15s(SortedHand, Points15),
-    Value is Points15.
+    score_pairs(SortedHand, PointsPairs),
+    Value is Points15 + PointsPairs.
 
 score_15s(SortedHand, Points) :-
-    bagof(Combination, valid_combination(SortedHand, Combination), Fifteens),
-    length(Fifteens, Length),
+    (   bagof(Combination, valid_combination(SortedHand, Combination), Fifteens)
+    ->  length(Fifteens, Length)
+    ;   Length = 0
+    ),
     Points is Length * 2.
+
+%% score_pairs(+Hand, -Points)
+% Score pairs in the hand, assuming the hand is sorted
+score_pairs([], 0).
+score_pairs([card(Rank, _), card(Rank, _)|Rest], Points) :-
+    % Check for three-of-a-kind
+    (Rest = [card(Rank, _)|Rest2] ->
+        % Check for four-of-a-kind
+        (Rest2 = [card(Rank, _)|Rest3] ->
+            score_pairs(Rest3, SubPoints),
+            Points is SubPoints + 12
+        ;   score_pairs(Rest2, SubPoints),
+            Points is SubPoints + 6
+        )
+    ;   score_pairs(Rest, SubPoints),
+        Points is SubPoints + 2
+    ).
+score_pairs([_|Rest], Points) :-
+    score_pairs(Rest, Points).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Helper functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
