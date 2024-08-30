@@ -55,7 +55,7 @@ card_value(card(jack, _), 10).
 card_value(card(queen, _), 10).
 card_value(card(king, _), 10).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Sort %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 sort_hand(Hand, SortedHand) :-
     maplist(rank_value, Hand, HandValues),
@@ -67,11 +67,14 @@ sort_hand(Hand, SortedHand) :-
 score_hand(SortedHand, Hand, Startcard, Value) :-
     score_15s(SortedHand, Points15),
     score_pairs(SortedHand, PointsPairs),
-    Value is Points15 + PointsPairs.
+    score_runs(SortedHand, PointsRuns),
+    score_flushes(Hand, Startcard, PointsFlushes),
+    score_nobs(Hand, Startcard, PointsNobs),
+    Value is Points15 + PointsPairs + PointsRuns + PointsFlushes + PointsNobs.
 
 score_15s(SortedHand, Points) :-
-    (   bagof(Combination, valid_15s(SortedHand, Combination), Fifteens)
-    ->  length(Fifteens, Length)
+    (   bagof(Combination, valid_15s(SortedHand, Combination), Fifteens) ->  
+        length(Fifteens, Length)
     ;   Length = 0
     ),
     Points is Length * 2.
@@ -98,12 +101,28 @@ score_pairs([_|Rest], Points) :-
 %% score_runs(+Hand, -Points)
 % Calculate points for runs in the hand
 score_runs(SortedHand, Points) :-
-    findall(RunPoints, valid_run(SortedHand, RunPoints), RunPointsList),
-    % We only want the longest run
-    max(RunPointsList, Max),
-    count_occurrences(RunPointsList, Max, Occurrences),
-    Points is Max * Occurrences,
-    !.
+    (   bagof(RunPoints, valid_run(SortedHand, RunPoints), RunPointsList) ->
+        findall(RunPoints, valid_run(SortedHand, RunPoints), RunPointsList),
+        % We only want the longest run
+        max(RunPointsList, Max),
+        count_occurrences(RunPointsList, Max, Occurrences),
+        Points is Max * Occurrences
+    ;   Points = 0
+    ).
+
+score_flushes(Hand, StartCard, Points) :-
+    (   same_suits([StartCard | Hand]) ->
+        Points is 5
+    ;   same_suits(Hand) ->
+        Points is 4
+    ;   Points is 0
+    ).
+
+score_nobs(Hand, card(_, Suit), Points) :-
+    (   member(card(jack, Suit), Hand) ->
+        Points is 1
+    ;   Points is 0
+    ).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Helper functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -135,6 +154,10 @@ is_consecutive([card(Rank1, _), card(Rank2, _)|Rest]) :-
     Rank2 =:= Rank1 + 1,
     is_consecutive([card(Rank2, _)|Rest]).
 is_consecutive([_]).  % End of run (single card)
+
+same_suits([_]).
+same_suits([card(_, Suit), card(_, Suit)|Rest]) :-
+    same_suits([card(_, Suit)|Rest]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Generic Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
