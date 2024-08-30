@@ -62,7 +62,7 @@ sort_hand(Hand, SortedHand) :-
     msort(HandValues, SortedHandValues),
     maplist(rank_value, SortedHand, SortedHandValues).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Core Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 score_hand(SortedHand, Hand, Startcard, Value) :-
     score_15s(SortedHand, Points15),
@@ -70,7 +70,7 @@ score_hand(SortedHand, Hand, Startcard, Value) :-
     Value is Points15 + PointsPairs.
 
 score_15s(SortedHand, Points) :-
-    (   bagof(Combination, valid_combination(SortedHand, Combination), Fifteens)
+    (   bagof(Combination, valid_15s(SortedHand, Combination), Fifteens)
     ->  length(Fifteens, Length)
     ;   Length = 0
     ),
@@ -95,11 +95,21 @@ score_pairs([card(Rank, _), card(Rank, _)|Rest], Points) :-
 score_pairs([_|Rest], Points) :-
     score_pairs(Rest, Points).
 
+%% score_runs(+Hand, -Points)
+% Calculate points for runs in the hand
+score_runs(SortedHand, Points) :-
+    findall(RunPoints, valid_run(SortedHand, RunPoints), RunPointsList),
+    % We only want the longest run
+    max(RunPointsList, Max),
+    count_occurrences(RunPointsList, Max, Occurrences),
+    Points is Max * Occurrences,
+    !.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Helper functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% valid_combination(+Values, -Combination)
+%% valid_15s(+Values, -Combination)
 % Generates all valid combinations of cards that sum to 15
-valid_combination(Hand, Combination) :-
+valid_15s(Hand, Combination) :-
     combination(Hand, Combination),
     sum_to_15(Combination).
 
@@ -108,7 +118,40 @@ valid_combination(Hand, Combination) :-
 sum_to_15(Combination) :-
     maplist(card_value, Combination, Values),
     sum_list(Values, Sum),
-    Sum #= 15.
+    Sum = 15.
+
+%% valid_run(+Hand, -RunPoints)
+% Generate all valid runs and return their point value
+valid_run(Hand, RunPoints) :-
+    combination(Hand, Subset),      % Find all subsets of the hand
+    length(Subset, Length),
+    Length >= 3,                    % Runs must be at least 3 cards
+    maplist(rank_value, Subset, SubsetValues), % Convert cards to values
+    is_consecutive(SubsetValues),
+    RunPoints = Length.
+
+% Check if the subset is consecutive
+is_consecutive([card(Rank1, _), card(Rank2, _)|Rest]) :-
+    Rank2 =:= Rank1 + 1,
+    is_consecutive([card(Rank2, _)|Rest]).
+is_consecutive([_]).  % End of run (single card)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Generic Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Find the maximum value in a list
+max([H | []], H).
+max([H | T], Max) :- 
+    max(T, Max1), Max1 > H, Max is Max1; 
+    Max is H.
+
+% Count occurrences of a value in a list
+count_occurrences([], _, 0).
+count_occurrences([H|T], Value, Count) :-
+    (   H =:= Value ->
+        count_occurrences(T, Value, TailCount),
+        Count is TailCount + 1
+    ;   count_occurrences(T, Value, Count)
+    ).
 
 %% combination(+List, -Combination)
 % Generates all combinations of elements in List.
