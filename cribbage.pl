@@ -20,7 +20,13 @@ hand_value(Hand, StartCard, Value) :-
     sort_hand(FullHand, SortedHand),
     score_hand(SortedHand, Hand, StartCard, Value),
     !. % ! cuts off backtracking
-    
+
+%% select_hand(+Cards, -Hand, -Cribcards)
+% Selects the best hand to maximise expected value
+select_hand(Cards, BestHand, BestCribcards) :-
+    findall(Hand-Cribcards, choose_hand(Cards, Hand, Cribcards), HandCribPairs),
+    best_hand(HandCribPairs, BestHand, BestCribcards).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% Card Value Definition %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% rank_value(+Card, -CardValue)
@@ -57,6 +63,8 @@ card_value(card(king, _), 10).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Sort %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%% sort_hand(+Hand, -SortedHand)
+% Sorts a hand by rank value
 sort_hand(Hand, SortedHand) :-
     maplist(rank_value, Hand, HandValues),
     msort(HandValues, SortedHandValues),
@@ -64,6 +72,8 @@ sort_hand(Hand, SortedHand) :-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Core Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%% score_hand(+SortedHand, +Hand, +Startcard, -Value)
+% Calculate the value of a hand
 score_hand(SortedHand, Hand, Startcard, Value) :-
     score_15s(SortedHand, Points15),
     score_pairs(SortedHand, PointsPairs),
@@ -72,15 +82,17 @@ score_hand(SortedHand, Hand, Startcard, Value) :-
     score_nobs(Hand, Startcard, PointsNobs),
     Value is Points15 + PointsPairs + PointsRuns + PointsFlushes + PointsNobs.
 
-score_15s(SortedHand, Points) :-
-    (   bagof(Combination, valid_15s(SortedHand, Combination), Fifteens) ->  
+%% score_15s(+Hand, -Points)
+% Calculate points for 15s in the hand
+score_15s(Hand, Points) :-
+    (   bagof(Combination, valid_15s(Hand, Combination), Fifteens) ->  
         length(Fifteens, Length)
     ;   Length = 0
     ),
     Points is Length * 2.
 
 %% score_pairs(+Hand, -Points)
-% Score pairs in the hand, assuming the hand is sorted
+% Calculate points for pairs in the hand, assuming the hand is sorted
 score_pairs([], 0).
 score_pairs([card(Rank, _), card(Rank, _)|Rest], Points) :-
     % Check for three-of-a-kind
@@ -110,6 +122,8 @@ score_runs(SortedHand, Points) :-
     ;   Points = 0
     ).
 
+%% score_flushes(+Hand, +StartCard, -Points)
+% Calculate points for flushes in the hand
 score_flushes(Hand, StartCard, Points) :-
     (   same_suits([StartCard | Hand]) ->
         Points is 5
@@ -118,10 +132,38 @@ score_flushes(Hand, StartCard, Points) :-
     ;   Points is 0
     ).
 
+%% score_nobs(+Hand, +StartCard, -Points)
+% Calculate points for nobs in the hand
 score_nobs(Hand, card(_, Suit), Points) :-
     (   member(card(jack, Suit), Hand) ->
         Points is 1
     ;   Points is 0
+    ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Hand Selection Core %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% choose_hand(+Cards, -Hand, -Cribcards)
+% Generate all possible hands (4 cards) and corresponding crib cards
+choose_hand(Cards, Hand, Cribcards) :-
+    length(Hand, 4),
+    combination(Cards, Hand),
+    subtract(Cards, Hand, Cribcards).
+
+%% best_hand(+HandCribPairs, -BestHand, -BestCribcards)
+% Find the best hand based on expected value
+best_hand([Hand-Cribcards | Rest], BestHand, BestCribcards) :-
+    expected_value(Hand, Value),
+    best_hand(Rest, Hand-Cribcards, Value, BestHand, BestCribcards).
+
+% best_hand/5 helper function with accumulator
+best_hand([], BestHand-Cribcards, _, BestHand, Cribcards).
+best_hand([Hand-Cribcards | Rest], CurrentBestHand-CurrentBestCribcards, 
+            CurrentBestValue, BestHand, BestCribcards) :-
+    expected_value(Hand, Value),
+    (   Value > CurrentBestValue ->
+        best_hand(Rest, Hand-Cribcards, Value, BestHand, BestCribcards)
+    ;   best_hand(Rest, CurrentBestHand-CurrentBestCribcards, CurrentBestValue, 
+                    BestHand, BestCribcards)
     ).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Helper functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -149,15 +191,36 @@ valid_run(Hand, RunPoints) :-
     is_consecutive(SubsetValues),
     RunPoints = Length.
 
-% Check if the subset is consecutive
+%% is_consecutive(+Cards)
+% Checks if the cards are consecutive
 is_consecutive([card(Rank1, _), card(Rank2, _)|Rest]) :-
     Rank2 =:= Rank1 + 1,
     is_consecutive([card(Rank2, _)|Rest]).
 is_consecutive([_]).  % End of run (single card)
 
+%% same_suits(+Hand)
+% Check if all cards have the same suit
 same_suits([_]).
 same_suits([card(_, Suit), card(_, Suit)|Rest]) :-
     same_suits([card(_, Suit)|Rest]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Hand Selection Helper %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% expected_value(+Hand, -Value)
+% Calculate the expected value of a hand
+expected_value(Hand, Value) :-
+    findall(StartCard, possible_start_card(StartCard, Hand), PossibleStartCards),
+    maplist(hand_value(Hand), PossibleStartCards, Values),
+    sum_list(Values, Total),
+    length(PossibleStartCards, Count),
+    Value is Total / Count.
+
+%% possible_start_card(-Card, +Hand)
+% Check if a card is a valid start card
+possible_start_card(card(Rank, Suit), Hand) :-
+    card(Rank, Suit),                
+    \+ member(card(Rank, Suit), Hand),
+    \+ member(Rank, [1, 11, 12, 13]).   % Face cards cannot be number cards
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Generic Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
